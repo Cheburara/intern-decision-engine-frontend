@@ -2,9 +2,12 @@
 // that displays a loan application form.
 
 import 'dart:math';
+import 'package:intl/intl.dart';
 
 import 'package:flutter/material.dart';
 import 'package:inbank_frontend/fonts.dart';
+import 'package:inbank_frontend/widgets/country_code_field.dart';
+import 'package:inbank_frontend/widgets/date_of_birth_field.dart';
 import 'package:inbank_frontend/widgets/national_id_field.dart';
 
 import '../api_service.dart';
@@ -26,23 +29,29 @@ class _LoanFormState extends State<LoanForm> {
   int _loanPeriod = 36;
   int _loanAmountResult = 0;
   int _loanPeriodResult = 0;
+  String _countryCode = '';
+  DateTime? _dateOfBirth;
   String _errorMessage = '';
 
   // Submit the form and update the state with the loan decision results.
   // Only submits if the form inputs are validated.
-  void _submitForm() async {
-    if (_formKey.currentState!.validate()) {
-      final result = await _apiService.requestLoanDecision(
-          _nationalId, _loanAmount, _loanPeriod);
+  void _submitForm() {
+    ApiService apiService = ApiService();
+    DateTime? localDateOfBirth = _dateOfBirth;
+    String formattedDateOfBirth = localDateOfBirth != null ? formatDate(localDateOfBirth) : '';
+
+    apiService.requestLoanDecision(_nationalId, _loanAmount, _loanPeriod, _countryCode, formattedDateOfBirth)
+        .then((response) {
       setState(() {
-        _loanAmountResult = int.parse(result['loanAmount'].toString());
-        _loanPeriodResult = int.parse(result['loanPeriod'].toString());
-        _errorMessage = result['errorMessage'].toString();
+        _loanAmountResult = int.tryParse(response['loanAmount'] ?? '') ?? 0;
+        _loanPeriodResult = int.tryParse(response['loanPeriod'] ?? '') ?? 0;
+        _errorMessage = response['errorMessage'] ?? '';
       });
-    } else {
-      _loanAmountResult = 0;
-      _loanPeriodResult = 0;
-    }
+    }).catchError((error) {
+      setState(() {
+        _errorMessage = 'Failed to communicate with the server.';
+      });
+    });
   }
 
   // Builds the application form widget.
@@ -68,6 +77,14 @@ class _LoanFormState extends State<LoanForm> {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          CountryCodeField(
+                            onChanged: (value) {
+                              setState(() {
+                                _countryCode = value ?? '';
+                                _submitForm();
+                              });
+                            },
+                          ),
                           NationalIdTextFormField(
                             onChanged: (value) {
                               setState(() {
@@ -76,13 +93,21 @@ class _LoanFormState extends State<LoanForm> {
                               });
                             },
                           ),
+                          BirthDateFormField(
+                            onChanged: (DateTime? value) {
+                              setState(() {
+                                _dateOfBirth = value;
+                                _submitForm();
+                              });
+                            },
+                          ),
                         ],
                       );
                     },
                   ),
-                  const SizedBox(height: 60.0),
+                  const SizedBox(height: 30.0),
                   Text('Loan Amount: $_loanAmount €'),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   Slider.adaptive(
                     value: _loanAmount.toDouble(),
                     min: 2000,
@@ -119,19 +144,19 @@ class _LoanFormState extends State<LoanForm> {
                       )
                     ],
                   ),
-                  const SizedBox(height: 24.0),
+                  const SizedBox(height: 10.0),
                   Text('Loan Period: $_loanPeriod months'),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   Slider.adaptive(
                     value: _loanPeriod.toDouble(),
                     min: 12,
                     max: 60,
-                    divisions: 60,
+                    divisions: 48,
                     label: '$_loanPeriod months',
                     activeColor: AppColors.secondaryColor,
                     onChanged: (double newValue) {
                       setState(() {
-                        _loanPeriod = ((newValue.floor() / 6).round() * 6);
+                        _loanPeriod = newValue.round();
                         _submitForm();
                       });
                     },
@@ -158,12 +183,12 @@ class _LoanFormState extends State<LoanForm> {
                       )
                     ],
                   ),
-                  const SizedBox(height: 24.0),
+                  const SizedBox(height: 10.0),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 16.0),
+          const SizedBox(height: 10.0),
           Column(
             children: [
               Text(
@@ -179,5 +204,9 @@ class _LoanFormState extends State<LoanForm> {
         ],
       ),
     );
+  }
+
+  String formatDate(DateTime dateTime) {
+    return DateFormat('yyyy-MM-dd').format(dateTime);
   }
 }
